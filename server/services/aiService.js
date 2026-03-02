@@ -63,6 +63,44 @@ async function chatWithText(message, history = [], mode = 'detailed') {
 }
 
 /**
+ * Stream chat with text – yields tokens as they are generated
+ */
+async function* streamChatWithText(message, history = [], mode = 'detailed') {
+    const systemPrompt =
+        mode === 'beginner'
+            ? 'You are a friendly AI assistant. Explain everything in very simple terms, as if talking to a complete beginner. Use analogies and avoid jargon.'
+            : 'You are a knowledgeable AI assistant. Provide thorough, well-structured answers with relevant details.';
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+    ];
+
+    for (const entry of history) {
+        messages.push({
+            role: entry.role === 'user' ? 'user' : 'assistant',
+            content: entry.content,
+        });
+    }
+
+    messages.push({ role: 'user', content: message });
+
+    const stream = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages,
+        temperature: 0.7,
+        max_tokens: 4096,
+        stream: true,
+    });
+
+    for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content;
+        if (content) {
+            yield content;
+        }
+    }
+}
+
+/**
  * Analyze an image with an optional text prompt
  */
 async function analyzeImage(imageBuffer, mimeType, prompt = '') {
@@ -155,4 +193,4 @@ async function summarizeDocument(documentText, mode = 'detailed') {
     });
 }
 
-module.exports = { chatWithText, analyzeImage, chatWithDocument, summarizeDocument };
+module.exports = { chatWithText, streamChatWithText, analyzeImage, chatWithDocument, summarizeDocument };

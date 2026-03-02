@@ -3,12 +3,15 @@ import MessageBubble from './MessageBubble';
 import VoiceInput from './VoiceInput';
 import ImageUpload from './ImageUpload';
 import FileUpload from './FileUpload';
-import { sendMessage, analyzeImage, uploadPDF, askPDFQuestion } from '../services/api';
+import { streamMessage, analyzeImage, uploadPDF, askPDFQuestion } from '../services/api';
 
 export default function ChatWindow({ mode, messages, setMessages, documentText, setDocumentText, onMessageSaved }) {
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
+    const [isStreaming, setIsStreaming] = useState(false);
     const messagesEndRef = useRef(null);
+    const abortControllerRef = useRef(null);
+    const streamingMsgIdRef = useRef(null);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -23,6 +26,11 @@ export default function ChatWindow({ mode, messages, setMessages, documentText, 
             .filter((m) => !m.imageUrl && !m.pdfName)
             .map((m) => ({ role: m.role, content: m.content }));
 
+    const handleStopStreaming = () => {
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+    };
+
     const handleSend = async (text = input.trim()) => {
         if (!text || loading) return;
         setInput('');
@@ -33,21 +41,92 @@ export default function ChatWindow({ mode, messages, setMessages, documentText, 
         setLoading(true);
 
         try {
-            let reply;
             if (documentText) {
-                reply = await askPDFQuestion(documentText, text, mode);
+                // PDF Q&A – use non-streaming (askPDFQuestion returns full reply)
+                const reply = await askPDFQuestion(documentText, text, mode);
+                setMessages((prev) => [...prev, { role: 'assistant', content: reply, id: Date.now() + 1 }]);
+                onMessageSaved?.('assistant', reply, 'text');
             } else {
-                reply = await sendMessage(text, buildHistory(), mode);
+                // Text chat – use streaming
+                const assistantMsgId = Date.now() + 1;
+                streamingMsgIdRef.current = assistantMsgId;
+
+                // Insert empty streaming placeholder
+                setMessages((prev) => [
+                    ...prev,
+                    { role: 'assistant', content: '', id: assistantMsgId, isStreaming: true },
+                ]);
+                setIsStreaming(true);
+
+                const controller = new AbortController();
+                abortControllerRef.current = controller;
+
+                let fullContent = '';
+
+                await streamMessage(text, buildHistory(), mode, {
+                    onChunk: (token) => {
+                        fullContent += token;
+                        const updatedContent = fullContent;
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantMsgId
+                                    ? { ...m, content: updatedContent }
+                                    : m
+                            )
+                        );
+                    },
+                    onDone: () => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantMsgId
+                                    ? { ...m, isStreaming: false }
+                                    : m
+                            )
+                        );
+                        setIsStreaming(false);
+                        abortControllerRef.current = null;
+                        streamingMsgIdRef.current = null;
+                        if (fullContent) {
+                            onMessageSaved?.('assistant', fullContent, 'text');
+                        }
+                    },
+                    onError: (errorMsg) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantMsgId
+                                    ? { ...m, content: `❌ ${errorMsg}`, isStreaming: false }
+                                    : m
+                            )
+                        );
+                        setIsStreaming(false);
+                        abortControllerRef.current = null;
+                        streamingMsgIdRef.current = null;
+                    },
+                    signal: controller.signal,
+                });
             }
-            setMessages((prev) => [...prev, { role: 'assistant', content: reply, id: Date.now() + 1 }]);
-            onMessageSaved?.('assistant', reply, 'text');
         } catch (err) {
-            const serverMsg = err.response?.data?.error;
+            const serverMsg = err.response?.data?.error || err.message;
             const errorText = serverMsg || 'Sorry, something went wrong. Please try again.';
-            setMessages((prev) => [
-                ...prev,
-                { role: 'assistant', content: `❌ ${errorText}`, id: Date.now() + 1 },
-            ]);
+            // Only add error message if we don't already have a streaming placeholder
+            if (!streamingMsgIdRef.current) {
+                setMessages((prev) => [
+                    ...prev,
+                    { role: 'assistant', content: `❌ ${errorText}`, id: Date.now() + 1 },
+                ]);
+            } else {
+                const msgId = streamingMsgIdRef.current;
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === msgId
+                            ? { ...m, content: `❌ ${errorText}`, isStreaming: false }
+                            : m
+                    )
+                );
+            }
+            setIsStreaming(false);
+            abortControllerRef.current = null;
+            streamingMsgIdRef.current = null;
         } finally {
             setLoading(false);
         }
@@ -152,8 +231,8 @@ export default function ChatWindow({ mode, messages, setMessages, documentText, 
                     <MessageBubble key={msg.id} message={msg} />
                 ))}
 
-                {/* Typing indicator */}
-                {loading && (
+                {/* Typing indicator – only for non-streaming loading (image/PDF) */}
+                {loading && !isStreaming && (
                     <div className="flex justify-start animate-fade-in">
                         <div className="bg-surface-700 rounded-2xl rounded-tl-md px-5 py-4">
                             <div className="flex items-center gap-1.5">
@@ -208,19 +287,32 @@ export default function ChatWindow({ mode, messages, setMessages, documentText, 
                         disabled={loading}
                     />
 
-                    <button
-                        onClick={() => handleSend()}
-                        disabled={!input.trim() || loading}
-                        className="p-2.5 rounded-lg bg-white text-surface-900
-                            hover:bg-gray-200 transition-all duration-200
-                            disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Send message"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-                        </svg>
-                    </button>
+                    {isStreaming ? (
+                        <button
+                            onClick={handleStopStreaming}
+                            className="p-2.5 rounded-lg bg-red-500/20 text-red-400
+                                hover:bg-red-500/30 transition-all duration-200"
+                            title="Stop generating"
+                        >
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                <rect x="6" y="6" width="12" height="12" rx="2" />
+                            </svg>
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => handleSend()}
+                            disabled={!input.trim() || loading}
+                            className="p-2.5 rounded-lg bg-white text-surface-900
+                                hover:bg-gray-200 transition-all duration-200
+                                disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Send message"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                            </svg>
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

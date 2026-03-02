@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 export default function MessageBubble({ message }) {
     const [speaking, setSpeaking] = useState(false);
     const isUser = message.role === 'user';
+    const isStreaming = message.isStreaming;
 
     const handleSpeak = () => {
         if (speaking) {
@@ -63,12 +64,15 @@ export default function MessageBubble({ message }) {
                     ) : (
                         <div className="prose-chat text-sm leading-relaxed">
                             <ReactMarkdown>{message.content}</ReactMarkdown>
+                            {isStreaming && (
+                                <span className="streaming-cursor">▊</span>
+                            )}
                         </div>
                     )}
                 </div>
 
-                {/* Speak button for AI messages */}
-                {!isUser && (
+                {/* Speak button for AI messages – hidden while streaming */}
+                {!isUser && !isStreaming && message.content && (
                     <div className="mt-1.5 flex items-center gap-2">
                         <button
                             onClick={handleSpeak}
