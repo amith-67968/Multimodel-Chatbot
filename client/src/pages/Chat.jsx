@@ -2,7 +2,15 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ChatWindow from '../components/ChatWindow';
 import { useAuth } from '../context/AuthContext';
-import { saveMessage, loadConversations, deleteConversation } from '../services/supabaseDb';
+import {
+    saveMessage,
+    loadConversations,
+    deleteConversation,
+    createConversationMeta,
+    updateConversationTitle,
+    loadConversationList,
+    deleteConversationMeta,
+} from '../services/supabaseDb';
 
 export default function Chat() {
     const { user, signOut } = useAuth();
@@ -19,18 +27,20 @@ export default function Chat() {
         if (!user) return;
 
         const load = async () => {
-            const grouped = await loadConversations(user.id);
-            const convIds = Object.keys(grouped);
+            // Load conversation list (newest first) and all messages
+            const [metaList, grouped] = await Promise.all([
+                loadConversationList(user.id),
+                loadConversations(user.id),
+            ]);
 
             const freshId = String(Date.now());
             const freshConv = { id: freshId, title: 'New Chat', messages: [], documentId: '' };
 
-            if (convIds.length > 0) {
-                const loaded = convIds.map((convId) => {
-                    const msgs = grouped[convId];
-                    const firstUserMsg = msgs.find((m) => m.role === 'user');
-                    const title = firstUserMsg ? firstUserMsg.content.slice(0, 36) : 'Chat';
-                    return { id: convId, title, messages: msgs, documentId: '' };
+            if (metaList.length > 0) {
+                // Build conversations from metadata (already newest-first)
+                const loaded = metaList.map((meta) => {
+                    const msgs = grouped[meta.session_id] || [];
+                    return { id: meta.session_id, title: meta.title, messages: msgs, documentId: '' };
                 });
                 setConversations([freshConv, ...loaded]);
             } else {
@@ -61,9 +71,15 @@ export default function Chat() {
             prev.map((c) => {
                 if (c.id !== activeConvId) return c;
                 const newMsgs = typeof updater === 'function' ? updater(c.messages) : updater;
-                const title = c.title === 'New Chat' && newMsgs.length > 0
-                    ? newMsgs.find((m) => m.role === 'user')?.content.slice(0, 36) || 'New Chat'
-                    : c.title;
+                // Auto-generate title from first user message and persist to DB
+                let title = c.title;
+                if (c.title === 'New Chat' && newMsgs.length > 0) {
+                    const firstUserMsg = newMsgs.find((m) => m.role === 'user');
+                    if (firstUserMsg) {
+                        title = firstUserMsg.content.slice(0, 36);
+                        updateConversationTitle(c.id, title);
+                    }
+                }
                 return { ...c, messages: newMsgs, title };
             })
         );
@@ -77,21 +93,32 @@ export default function Chat() {
 
     const newChat = () => {
         const id = String(Date.now());
-        setConversations((prev) => [...prev, { id, title: 'New Chat', messages: [], documentId: '' }]);
+        const newConv = { id, title: 'New Chat', messages: [], documentId: '' };
+        // Insert at position 0 (after the fresh slot) so newest is at top
+        setConversations((prev) => [newConv, ...prev.filter((c) => c.messages.length > 0)]);
         setActiveConvId(id);
         setSidebarOpen(false);
+        // Persist metadata to Supabase
+        if (user) {
+            createConversationMeta(user.id, id, 'New Chat');
+        }
     };
 
     const deleteConv = async (id) => {
         if (user) {
-            await deleteConversation(user.id, id);
+            await Promise.all([
+                deleteConversation(user.id, id),
+                deleteConversationMeta(id),
+            ]);
         }
 
         setConversations((prev) => {
             const filtered = prev.filter((c) => c.id !== id);
             if (filtered.length === 0) {
-                const newConv = { id: String(Date.now()), title: 'New Chat', messages: [], documentId: '' };
-                setActiveConvId(newConv.id);
+                const freshId = String(Date.now());
+                const newConv = { id: freshId, title: 'New Chat', messages: [], documentId: '' };
+                setActiveConvId(freshId);
+                if (user) createConversationMeta(user.id, freshId, 'New Chat');
                 return [newConv];
             }
             if (activeConvId === id) setActiveConvId(filtered[0].id);
@@ -107,6 +134,12 @@ export default function Chat() {
     const handleMessageSaved = async (role, content, inputType = 'text') => {
         if (!user || !activeConvId) return;
         await saveMessage(user.id, activeConvId, role, content, inputType);
+        // Ensure metadata exists for this conversation (idempotent via unique constraint)
+        if (role === 'user') {
+            createConversationMeta(user.id, activeConvId, content.slice(0, 36)).catch(() => {
+                // Ignore duplicate insert errors (conversation already exists)
+            });
+        }
     };
 
     if (!historyLoaded) {
