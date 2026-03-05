@@ -39,6 +39,8 @@ router.post('/stream', async (req, res) => {
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
         'X-Accel-Buffering': 'no',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
     });
     res.flushHeaders();
 
