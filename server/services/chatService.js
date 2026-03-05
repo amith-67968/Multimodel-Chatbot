@@ -1,5 +1,6 @@
 const { chatWithText, streamChatWithText } = require('./aiService');
 const { getConversationSummary, buildMemoryAwareHistory, updateMemoryIfNeeded } = require('./memoryService');
+const { saveMessage, getRecentMessages } = require('../lib/memory');
 
 /**
  * Handle a non-streaming text chat request.
@@ -13,19 +14,41 @@ const { getConversationSummary, buildMemoryAwareHistory, updateMemoryIfNeeded } 
  * @returns {Promise<string>} The assistant's reply
  */
 async function handleChat(message, history, mode, userId, conversationId) {
-    // Build memory-aware history if userId/conversationId provided
+    // Load persisted messages as base history when conversationId is available
     let effectiveHistory = history;
+    if (conversationId) {
+        const persisted = await getRecentMessages(conversationId);
+        if (persisted.length > 0) {
+            effectiveHistory = persisted;
+        }
+    }
+
+    // Layer summary-based memory on top if userId/conversationId provided
     if (userId && conversationId) {
         const storedSummary = await getConversationSummary(userId, conversationId);
-        const result = buildMemoryAwareHistory(storedSummary, history);
+        const result = buildMemoryAwareHistory(storedSummary, effectiveHistory);
         effectiveHistory = result.history;
+    }
+
+    // Save user message to DB (non-blocking)
+    if (conversationId) {
+        saveMessage(conversationId, 'user', message).catch((err) =>
+            console.error('[Memory] Failed to save user message:', err.message)
+        );
     }
 
     const reply = await chatWithText(message, effectiveHistory, mode);
 
-    // Update memory in background (non-blocking)
+    // Save assistant response to DB (non-blocking)
+    if (conversationId) {
+        saveMessage(conversationId, 'assistant', reply).catch((err) =>
+            console.error('[Memory] Failed to save assistant message:', err.message)
+        );
+    }
+
+    // Update summary memory in background (non-blocking)
     if (userId && conversationId) {
-        const fullHistory = [...history, { role: 'user', content: message }, { role: 'assistant', content: reply }];
+        const fullHistory = [...effectiveHistory, { role: 'user', content: message }, { role: 'assistant', content: reply }];
         updateMemoryIfNeeded(userId, conversationId, fullHistory).catch((err) =>
             console.error('[Memory] Background update failed:', err.message)
         );
@@ -50,24 +73,50 @@ async function handleChat(message, history, mode, userId, conversationId) {
  * @returns {Promise<{ stream: AsyncGenerator<string>, onComplete: (fullReply: string) => void }>}
  */
 async function prepareStreamChat(message, history, mode, userId, conversationId) {
-    // Build memory-aware history if userId/conversationId provided
+    // Load persisted messages as base history when conversationId is available
     let effectiveHistory = history;
+    if (conversationId) {
+        try {
+            const persisted = await getRecentMessages(conversationId);
+            if (persisted.length > 0) {
+                effectiveHistory = persisted;
+            }
+        } catch (err) {
+            console.error('[Memory] Failed to load persisted messages:', err.message);
+        }
+    }
+
+    // Layer summary-based memory on top if userId/conversationId provided
     if (userId && conversationId) {
         try {
             const storedSummary = await getConversationSummary(userId, conversationId);
-            const result = buildMemoryAwareHistory(storedSummary, history);
+            const result = buildMemoryAwareHistory(storedSummary, effectiveHistory);
             effectiveHistory = result.history;
         } catch (err) {
             console.error('[Memory] Failed to load summary, using full history:', err.message);
         }
     }
 
+    // Save user message to DB (non-blocking)
+    if (conversationId) {
+        saveMessage(conversationId, 'user', message).catch((err) =>
+            console.error('[Memory] Failed to save user message:', err.message)
+        );
+    }
+
     const stream = streamChatWithText(message, effectiveHistory, mode);
 
     // Callback for the route handler to invoke after streaming finishes
     const onComplete = (fullReply) => {
+        // Save assistant response to DB
+        if (conversationId && fullReply) {
+            saveMessage(conversationId, 'assistant', fullReply).catch((err) =>
+                console.error('[Memory] Failed to save assistant message:', err.message)
+            );
+        }
+        // Update summary memory in background
         if (userId && conversationId && fullReply) {
-            const fullHistory = [...history, { role: 'user', content: message }, { role: 'assistant', content: fullReply }];
+            const fullHistory = [...effectiveHistory, { role: 'user', content: message }, { role: 'assistant', content: fullReply }];
             updateMemoryIfNeeded(userId, conversationId, fullHistory).catch((err) =>
                 console.error('[Memory] Background update failed:', err.message)
             );
