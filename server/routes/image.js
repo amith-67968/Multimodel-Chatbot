@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const { analyzeImage } = require('../services/aiService');
+const { handleImageAnalysis } = require('../services/visionService');
 
 // Configure multer for image uploads
 const storage = multer.memoryStorage();
@@ -29,7 +29,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         }
 
         const prompt = req.body.prompt || '';
-        const reply = await analyzeImage(req.file.buffer, req.file.mimetype, prompt);
+        const reply = await handleImageAnalysis(req.file.buffer, req.file.mimetype, prompt);
 
         res.json({
             reply,

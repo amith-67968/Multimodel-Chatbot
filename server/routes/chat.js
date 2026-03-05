@@ -1,9 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { chatWithText, streamChatWithText } = require('../services/aiService');
-const { getConversationSummary, buildMemoryAwareHistory, updateMemoryIfNeeded } = require('../services/memoryService');
+const { handleChat, prepareStreamChat } = require('../services/chatService');
 
-// POST /api/chat – original non-streaming endpoint (kept as fallback)
+// POST /api/chat – non-streaming endpoint (kept as fallback)
 router.post('/', async (req, res) => {
     try {
         const { message, history = [], mode = 'detailed', userId, conversationId } = req.body;
@@ -12,24 +11,7 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Message is required' });
         }
 
-        // Build memory-aware history if userId/conversationId provided
-        let effectiveHistory = history;
-        if (userId && conversationId) {
-            const storedSummary = await getConversationSummary(userId, conversationId);
-            const result = buildMemoryAwareHistory(storedSummary, history);
-            effectiveHistory = result.history;
-        }
-
-        const reply = await chatWithText(message, effectiveHistory, mode);
-
-        // Update memory in background (non-blocking)
-        if (userId && conversationId) {
-            const fullHistory = [...history, { role: 'user', content: message }, { role: 'assistant', content: reply }];
-            updateMemoryIfNeeded(userId, conversationId, fullHistory).catch((err) =>
-                console.error('[Memory] Background update failed:', err.message)
-            );
-        }
-
+        const reply = await handleChat(message, history, mode, userId, conversationId);
         res.json({ reply });
     } catch (error) {
         console.error('Chat error:', error.message || error);
@@ -50,35 +32,32 @@ router.post('/stream', async (req, res) => {
         return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Build memory-aware history if userId/conversationId provided
-    let effectiveHistory = history;
-    if (userId && conversationId) {
-        try {
-            const storedSummary = await getConversationSummary(userId, conversationId);
-            const result = buildMemoryAwareHistory(storedSummary, history);
-            effectiveHistory = result.history;
-        } catch (err) {
-            console.error('[Memory] Failed to load summary, using full history:', err.message);
-        }
-    }
-
-    // Set SSE headers
+    // Set SSE headers and flush immediately so the client establishes the
+    // connection before we start awaiting the LLM stream.
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
         'X-Accel-Buffering': 'no',
     });
+    res.flushHeaders();
 
     let aborted = false;
     let fullReply = '';
 
-    req.on('close', () => {
-        aborted = true;
+    // Detect client disconnection via the *response* close event.
+    // NOTE: req.on('close') fires immediately in Node.js v24+ once the request
+    // body is consumed, NOT when the client disconnects. Using res.on('close')
+    // with a writableFinished check is the correct approach.
+    res.on('close', () => {
+        if (!res.writableFinished) {
+            aborted = true;
+        }
     });
 
     try {
-        const stream = streamChatWithText(message, effectiveHistory, mode);
+        // Prepare memory-aware context and get the raw LLM stream
+        const { stream, onComplete } = await prepareStreamChat(message, history, mode, userId, conversationId);
 
         for await (const token of stream) {
             if (aborted) break;
@@ -90,13 +69,8 @@ router.post('/stream', async (req, res) => {
             res.write('data: [DONE]\n\n');
         }
 
-        // Update memory in background (non-blocking)
-        if (userId && conversationId && fullReply) {
-            const fullHistory = [...history, { role: 'user', content: message }, { role: 'assistant', content: fullReply }];
-            updateMemoryIfNeeded(userId, conversationId, fullHistory).catch((err) =>
-                console.error('[Memory] Background update failed:', err.message)
-            );
-        }
+        // Trigger background memory update
+        onComplete(fullReply);
     } catch (error) {
         console.error('Stream error:', error.message || error);
         const isRateLimit = error.message?.includes('429') || error.message?.includes('rate') || error.message?.includes('quota');

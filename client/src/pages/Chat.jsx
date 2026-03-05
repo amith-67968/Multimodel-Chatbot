@@ -9,7 +9,7 @@ export default function Chat() {
     const navigate = useNavigate();
 
     const [mode, setMode] = useState('detailed');
-    const [conversations, setConversations] = useState([{ id: String(Date.now()), title: 'New Chat', messages: [], documentText: '' }]);
+    const [conversations, setConversations] = useState([{ id: String(Date.now()), title: 'New Chat', messages: [], documentId: '' }]);
     const [activeConvId, setActiveConvId] = useState(null);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -23,14 +23,14 @@ export default function Chat() {
             const convIds = Object.keys(grouped);
 
             const freshId = String(Date.now());
-            const freshConv = { id: freshId, title: 'New Chat', messages: [], documentText: '' };
+            const freshConv = { id: freshId, title: 'New Chat', messages: [], documentId: '' };
 
             if (convIds.length > 0) {
                 const loaded = convIds.map((convId) => {
                     const msgs = grouped[convId];
                     const firstUserMsg = msgs.find((m) => m.role === 'user');
                     const title = firstUserMsg ? firstUserMsg.content.slice(0, 36) : 'Chat';
-                    return { id: convId, title, messages: msgs, documentText: '' };
+                    return { id: convId, title, messages: msgs, documentId: '' };
                 });
                 setConversations([freshConv, ...loaded]);
             } else {
@@ -69,15 +69,15 @@ export default function Chat() {
         );
     };
 
-    const setDocumentText = (text) => {
+    const setDocumentId = (id) => {
         setConversations((prev) =>
-            prev.map((c) => (c.id === activeConvId ? { ...c, documentText: text } : c))
+            prev.map((c) => (c.id === activeConvId ? { ...c, documentId: id } : c))
         );
     };
 
     const newChat = () => {
         const id = String(Date.now());
-        setConversations((prev) => [...prev, { id, title: 'New Chat', messages: [], documentText: '' }]);
+        setConversations((prev) => [...prev, { id, title: 'New Chat', messages: [], documentId: '' }]);
         setActiveConvId(id);
         setSidebarOpen(false);
     };
@@ -90,7 +90,7 @@ export default function Chat() {
         setConversations((prev) => {
             const filtered = prev.filter((c) => c.id !== id);
             if (filtered.length === 0) {
-                const newConv = { id: String(Date.now()), title: 'New Chat', messages: [], documentText: '' };
+                const newConv = { id: String(Date.now()), title: 'New Chat', messages: [], documentId: '' };
                 setActiveConvId(newConv.id);
                 return [newConv];
             }
@@ -276,8 +276,8 @@ export default function Chat() {
                     mode={mode}
                     messages={activeConv?.messages || []}
                     setMessages={setMessages}
-                    documentText={activeConv?.documentText || ''}
-                    setDocumentText={setDocumentText}
+                    documentId={activeConv?.documentId || ''}
+                    setDocumentId={setDocumentId}
                     onMessageSaved={handleMessageSaved}
                     userId={user?.id}
                     conversationId={activeConvId}

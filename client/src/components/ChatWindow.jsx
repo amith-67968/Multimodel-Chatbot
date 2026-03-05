@@ -5,7 +5,7 @@ import ImageUpload from './ImageUpload';
 import FileUpload from './FileUpload';
 import { streamMessage, analyzeImage, uploadPDF, askPDFQuestion } from '../services/api';
 
-export default function ChatWindow({ mode, messages, setMessages, documentText, setDocumentText, onMessageSaved, userId, conversationId }) {
+export default function ChatWindow({ mode, messages, setMessages, documentId, setDocumentId, onMessageSaved, userId, conversationId }) {
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [isStreaming, setIsStreaming] = useState(false);
@@ -41,9 +41,9 @@ export default function ChatWindow({ mode, messages, setMessages, documentText, 
         setLoading(true);
 
         try {
-            if (documentText) {
-                // PDF Q&A – use non-streaming (askPDFQuestion returns full reply)
-                const reply = await askPDFQuestion(documentText, text, mode);
+            if (documentId) {
+                // PDF Q&A – use RAG retrieval (askPDFQuestion uses documentId)
+                const reply = await askPDFQuestion(documentId, userId, text, mode);
                 setMessages((prev) => [...prev, { role: 'assistant', content: reply, id: Date.now() + 1 }]);
                 onMessageSaved?.('assistant', reply, 'text');
             } else {
@@ -167,9 +167,9 @@ export default function ChatWindow({ mode, messages, setMessages, documentText, 
         setLoading(true);
 
         try {
-            const data = await uploadPDF(file, mode);
-            setDocumentText(data.extractedText);
-            const pdfReply = `📄 **${data.filename}** (${data.pages} page${data.pages !== 1 ? 's' : ''})\n\n**Summary:**\n${data.summary}\n\n_You can now ask questions about this document._`;
+            const data = await uploadPDF(file, mode, userId);
+            setDocumentId(data.documentId);
+            const pdfReply = `📄 **${data.filename}** (${data.pages} page${data.pages !== 1 ? 's' : ''}, ${data.chunkCount} chunks indexed)\n\n**Summary:**\n${data.summary}\n\n_You can now ask questions about this document._`;
             setMessages((prev) => [
                 ...prev,
                 { role: 'assistant', content: pdfReply, id: Date.now() + 1 },
@@ -250,17 +250,17 @@ export default function ChatWindow({ mode, messages, setMessages, documentText, 
             </div>
 
             {/* Document context indicator */}
-            {documentText && (
+            {documentId && (
                 <div className="mx-4 mb-2 px-3 py-2 rounded-lg bg-white/5 border border-white/8 flex items-center justify-between">
                     <span className="text-xs text-gray-400 flex items-center gap-1.5">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                        PDF loaded — questions will be answered from the document
+                        PDF indexed — questions will use RAG retrieval
                     </span>
                     <button
-                        onClick={() => setDocumentText('')}
+                        onClick={() => setDocumentId('')}
                         className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
                     >
                         Clear
@@ -281,7 +281,7 @@ export default function ChatWindow({ mode, messages, setMessages, documentText, 
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder={documentText ? 'Ask about the document...' : 'Message AI Assistant...'}
+                        placeholder={documentId ? 'Ask about the document...' : 'Message AI Assistant...'}
                         rows={1}
                         className="flex-1 bg-transparent border-none outline-none resize-none text-sm
                             text-gray-200 placeholder-gray-500

@@ -132,9 +132,9 @@ async function analyzeImage(imageBuffer, mimeType, prompt = '') {
 }
 
 /**
- * Answer questions about an extracted document text
+ * Answer questions using RAG-retrieved context (replaces chatWithDocument)
  */
-async function chatWithDocument(documentText, question, mode = 'detailed') {
+async function chatWithRAGContext(ragContext, question, mode = 'detailed') {
     const modeInstruction =
         mode === 'beginner'
             ? 'Explain your answer in very simple terms, suitable for a beginner.'
@@ -143,11 +143,11 @@ async function chatWithDocument(documentText, question, mode = 'detailed') {
     const messages = [
         {
             role: 'system',
-            content: `You are a document analysis assistant. ${modeInstruction}`,
+            content: `You are a document analysis assistant. Answer questions based ONLY on the provided document excerpts. If the excerpts don't contain the answer, say so clearly. ${modeInstruction}`,
         },
         {
             role: 'user',
-            content: `Based on the following document content, answer the user's question.\n\n--- DOCUMENT START ---\n${documentText.substring(0, 30000)}\n--- DOCUMENT END ---\n\nUser question: ${question}`,
+            content: ragContext,
         },
     ];
 
@@ -193,4 +193,4 @@ async function summarizeDocument(documentText, mode = 'detailed') {
     });
 }
 
-module.exports = { withRetry, chatWithText, streamChatWithText, analyzeImage, chatWithDocument, summarizeDocument };
+module.exports = { withRetry, chatWithText, streamChatWithText, analyzeImage, chatWithRAGContext, summarizeDocument };
