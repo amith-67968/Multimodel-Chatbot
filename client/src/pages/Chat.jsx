@@ -279,6 +279,8 @@ export default function Chat() {
                     documentText={activeConv?.documentText || ''}
                     setDocumentText={setDocumentText}
                     onMessageSaved={handleMessageSaved}
+                    userId={user?.id}
+                    conversationId={activeConvId}
                 />
             </main>
         </div>

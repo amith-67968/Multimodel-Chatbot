@@ -5,7 +5,7 @@ import ImageUpload from './ImageUpload';
 import FileUpload from './FileUpload';
 import { streamMessage, analyzeImage, uploadPDF, askPDFQuestion } from '../services/api';
 
-export default function ChatWindow({ mode, messages, setMessages, documentText, setDocumentText, onMessageSaved }) {
+export default function ChatWindow({ mode, messages, setMessages, documentText, setDocumentText, onMessageSaved, userId, conversationId }) {
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [isStreaming, setIsStreaming] = useState(false);
@@ -64,6 +64,8 @@ export default function ChatWindow({ mode, messages, setMessages, documentText, 
                 let fullContent = '';
 
                 await streamMessage(text, buildHistory(), mode, {
+                    userId,
+                    conversationId,
                     onChunk: (token) => {
                         fullContent += token;
                         const updatedContent = fullContent;

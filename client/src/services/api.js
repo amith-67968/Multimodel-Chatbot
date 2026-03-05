@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+// Base URL for deployed backend — change this when switching environments
+const API_BASE_URL = "https://multimodel-chatbot.onrender.com";
+
 const api = axios.create({
-    baseURL: '/api',
+    baseURL: `${API_BASE_URL}/api`,
     timeout: 120000,
 });
 
@@ -20,11 +23,11 @@ export async function sendMessage(message, history = [], mode = 'detailed') {
  * @param {string} mode
  * @param {object} options - { onChunk, onDone, onError, signal }
  */
-export async function streamMessage(message, history = [], mode = 'detailed', { onChunk, onDone, onError, signal } = {}) {
-    const response = await fetch('/api/chat/stream', {
+export async function streamMessage(message, history = [], mode = 'detailed', { onChunk, onDone, onError, signal, userId, conversationId } = {}) {
+    const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, history, mode }),
+        body: JSON.stringify({ message, history, mode, userId, conversationId }),
         signal,
     });
 
@@ -97,12 +100,13 @@ export async function analyzeImage(file, prompt = '') {
 }
 
 /**
- * Upload a PDF and get extracted text + summary
+ * Upload a PDF — server will chunk, embed, and store it
  */
-export async function uploadPDF(file, mode = 'detailed') {
+export async function uploadPDF(file, mode = 'detailed', userId = '') {
     const formData = new FormData();
     formData.append('pdf', file);
     formData.append('mode', mode);
+    if (userId) formData.append('userId', userId);
     const { data } = await api.post('/pdf/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
     });
@@ -110,9 +114,9 @@ export async function uploadPDF(file, mode = 'detailed') {
 }
 
 /**
- * Ask a question about a PDF document
+ * Ask a question about a PDF document using RAG
  */
-export async function askPDFQuestion(documentText, question, mode = 'detailed') {
-    const { data } = await api.post('/pdf/ask', { documentText, question, mode });
+export async function askPDFQuestion(documentId, userId, question, mode = 'detailed') {
+    const { data } = await api.post('/pdf/ask', { documentId, userId, question, mode });
     return data.reply;
 }

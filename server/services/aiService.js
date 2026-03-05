@@ -193,4 +193,4 @@ async function summarizeDocument(documentText, mode = 'detailed') {
     });
 }
 
-module.exports = { chatWithText, streamChatWithText, analyzeImage, chatWithDocument, summarizeDocument };
+module.exports = { withRetry, chatWithText, streamChatWithText, analyzeImage, chatWithDocument, summarizeDocument };
