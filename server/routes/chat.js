@@ -1,7 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { handleChat, prepareStreamChat } = require('../services/chatService');
+const rateLimit = require('../middleware/rateLimit');
 
+// Apply rate limiting — 20 requests per minute per client
+router.use(rateLimit({ windowMs: 60_000, maxRequests: 20 }));
 // POST /api/chat – non-streaming endpoint (kept as fallback)
 router.post('/', async (req, res) => {
     try {
