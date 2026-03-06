@@ -28,6 +28,7 @@ create table if not exists document_chunks (
   chunk_index integer not null,
   content text not null,
   embedding vector(384),
+  metadata jsonb default '{}'::jsonb,
   created_at timestamptz default now()
 );
 

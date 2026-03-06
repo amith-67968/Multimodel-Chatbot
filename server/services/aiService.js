@@ -100,36 +100,6 @@ async function* streamChatWithText(message, history = [], mode = 'detailed') {
     }
 }
 
-/**
- * Analyze an image with an optional text prompt
- */
-async function analyzeImage(imageBuffer, mimeType, prompt = '') {
-    const base64Image = imageBuffer.toString('base64');
-    const dataUrl = `data:${mimeType};base64,${base64Image}`;
-
-    const textPrompt = prompt || 'Analyze this image in detail. Describe what you see, identify any text, diagrams, or notable elements, and provide a helpful explanation.';
-
-    return withRetry(async () => {
-        const completion = await groq.chat.completions.create({
-            model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-            messages: [
-                {
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: textPrompt },
-                        {
-                            type: 'image_url',
-                            image_url: { url: dataUrl },
-                        },
-                    ],
-                },
-            ],
-            temperature: 0.7,
-            max_tokens: 4096,
-        });
-        return completion.choices[0].message.content;
-    });
-}
 
 /**
  * Answer questions using RAG-retrieved context (replaces chatWithDocument)
@@ -193,4 +163,4 @@ async function summarizeDocument(documentText, mode = 'detailed') {
     });
 }
 
-module.exports = { withRetry, chatWithText, streamChatWithText, analyzeImage, chatWithRAGContext, summarizeDocument };
+module.exports = { withRetry, chatWithText, streamChatWithText, chatWithRAGContext, summarizeDocument };

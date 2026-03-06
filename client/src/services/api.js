@@ -100,6 +100,14 @@ export async function analyzeImage(file, prompt = '') {
 }
 
 /**
+ * Ask a follow-up question about a previously uploaded image
+ */
+export async function askImageQuestion(imageData, mimeType, question) {
+    const { data } = await api.post('/image/ask', { imageData, mimeType, question });
+    return data.reply;
+}
+
+/**
  * Upload a PDF — server will chunk, embed, and store it
  */
 export async function uploadPDF(file, mode = 'detailed', userId = '') {

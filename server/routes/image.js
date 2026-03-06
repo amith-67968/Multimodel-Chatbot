@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const { handleImageAnalysis } = require('../services/visionService');
+const { handleImageAnalysis, handleImageQuestion } = require('../services/visionService');
 
 // Configure multer for image uploads
 const storage = multer.memoryStorage();
@@ -21,25 +21,47 @@ const upload = multer({
     },
 });
 
-// POST /api/image
+// POST /api/image – Upload and analyse an image
 router.post('/', upload.single('image'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'Image file is required' });
         }
 
-        const prompt = req.body.prompt || '';
-        const reply = await handleImageAnalysis(req.file.buffer, req.file.mimetype, prompt);
+        const customPrompt = req.body?.prompt || undefined;
+        const result = await handleImageAnalysis(req.file, customPrompt);
 
         res.json({
-            reply,
+            reply: result.description,
             filename: req.file.originalname,
-            size: req.file.size,
+            size: result.size,
+            sizeLabel: result.sizeLabel,
+            mimeType: result.mimeType,
+            typeLabel: result.typeLabel,
+            imageData: result.imageData,
         });
     } catch (error) {
         console.error('Image analysis error:', error);
-        res.status(500).json({ error: 'Failed to analyze image', details: error.message });
+        res.status(500).json({ error: error.message || 'Failed to analyze image' });
+    }
+});
+
+// POST /api/image/ask – Ask a follow-up question about an uploaded image
+router.post('/ask', express.json(), async (req, res) => {
+    try {
+        const { imageData, mimeType, question } = req.body;
+
+        if (!imageData || !mimeType || !question) {
+            return res.status(400).json({ error: 'imageData, mimeType, and question are required' });
+        }
+
+        const reply = await handleImageQuestion({ imageData, mimeType }, question);
+        res.json({ reply });
+    } catch (error) {
+        console.error('Image Q&A error:', error);
+        res.status(500).json({ error: 'Failed to answer question about image', details: error.message });
     }
 });
 
 module.exports = router;
+

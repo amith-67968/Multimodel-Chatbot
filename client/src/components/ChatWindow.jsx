@@ -1,17 +1,32 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import MessageBubble from './MessageBubble';
 import VoiceInput from './VoiceInput';
 import ImageUpload from './ImageUpload';
 import FileUpload from './FileUpload';
-import { streamMessage, analyzeImage, uploadPDF, askPDFQuestion } from '../services/api';
+import { streamMessage, analyzeImage, askImageQuestion, uploadPDF, askPDFQuestion } from '../services/api';
+import { speak, stopSpeaking } from '../utils/speech';
 
 export default function ChatWindow({ mode, messages, setMessages, documentId, setDocumentId, onMessageSaved, userId, conversationId }) {
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [isStreaming, setIsStreaming] = useState(false);
+    const [imageContext, setImageContext] = useState(null);
+    const [stagedImage, setStagedImage] = useState(null); // { file, previewUrl }
+
+    // Voice assistant mode
+    const [voiceAssistant, setVoiceAssistant] = useState(false);
+    const [vaListening, setVaListening] = useState(false);
+    const [vaSpeaking, setVaSpeaking] = useState(false);
+    const voiceAssistantRef = useRef(false);
+
     const messagesEndRef = useRef(null);
     const abortControllerRef = useRef(null);
     const streamingMsgIdRef = useRef(null);
+
+    // Keep ref in sync
+    useEffect(() => {
+        voiceAssistantRef.current = voiceAssistant;
+    }, [voiceAssistant]);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -20,6 +35,20 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    // Clean up staged image object URL on unmount / change
+    useEffect(() => {
+        return () => {
+            if (stagedImage?.previewUrl) URL.revokeObjectURL(stagedImage.previewUrl);
+        };
+    }, [stagedImage]);
+
+    // Clean up voice assistant on unmount
+    useEffect(() => {
+        return () => {
+            stopSpeaking();
+        };
+    }, []);
 
     const buildHistory = () =>
         messages
@@ -31,8 +60,74 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
         abortControllerRef.current = null;
     };
 
+    /** Remove a staged image without uploading */
+    const clearStagedImage = () => {
+        if (stagedImage?.previewUrl) URL.revokeObjectURL(stagedImage.previewUrl);
+        setStagedImage(null);
+    };
+
+    /** Auto-speak a response if voice assistant is active */
+    const autoSpeak = useCallback((text) => {
+        if (!voiceAssistantRef.current || !text) return;
+        setVaSpeaking(true);
+        speak(text, () => {
+            setVaSpeaking(false);
+            // Recognition auto-restarts via VoiceInput's onend handler
+        });
+    }, []);
+
+    /** Upload & analyse the staged image */
+    const sendStagedImage = async () => {
+        if (!stagedImage) return;
+        const { file, previewUrl } = stagedImage;
+        setStagedImage(null);
+
+        const userMsg = {
+            role: 'user',
+            content: `Analyze this image: ${file.name}`,
+            imageUrl: previewUrl,
+            imageName: file.name,
+            id: Date.now(),
+        };
+        setMessages((prev) => [...prev, userMsg]);
+        onMessageSaved?.('user', `Analyze this image: ${file.name}`, 'image');
+        setLoading(true);
+
+        try {
+            const data = await analyzeImage(file);
+            setImageContext({ imageData: data.imageData, mimeType: data.mimeType, previewUrl });
+            const reply = data.reply;
+            setMessages((prev) => [
+                ...prev,
+                { role: 'assistant', content: reply, id: Date.now() + 1 },
+            ]);
+            onMessageSaved?.('assistant', reply, 'image');
+            autoSpeak(reply);
+        } catch (err) {
+            const serverMsg = err.response?.data?.error || err.message;
+            setMessages((prev) => [
+                ...prev,
+                { role: 'assistant', content: `❌ ${serverMsg || 'Failed to analyze image. Please try again.'}`, id: Date.now() + 1 },
+            ]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleSend = async (text = input.trim()) => {
-        if (!text || loading) return;
+        if (stagedImage && !text) {
+            await sendStagedImage();
+            return;
+        }
+
+        if (!text && !stagedImage) return;
+        if (loading) return;
+
+        if (stagedImage) {
+            await sendStagedImage();
+            return;
+        }
+
         setInput('');
 
         const userMsg = { role: 'user', content: text, id: Date.now() };
@@ -41,17 +136,21 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
         setLoading(true);
 
         try {
-            if (documentId) {
-                // PDF Q&A – use RAG retrieval (askPDFQuestion uses documentId)
+            if (imageContext) {
+                const reply = await askImageQuestion(imageContext.imageData, imageContext.mimeType, text);
+                setMessages((prev) => [...prev, { role: 'assistant', content: reply, id: Date.now() + 1 }]);
+                onMessageSaved?.('assistant', reply, 'image');
+                autoSpeak(reply);
+            } else if (documentId) {
                 const reply = await askPDFQuestion(documentId, userId, text, mode);
                 setMessages((prev) => [...prev, { role: 'assistant', content: reply, id: Date.now() + 1 }]);
                 onMessageSaved?.('assistant', reply, 'text');
+                autoSpeak(reply);
             } else {
                 // Text chat – use streaming
                 const assistantMsgId = Date.now() + 1;
                 streamingMsgIdRef.current = assistantMsgId;
 
-                // Insert empty streaming placeholder
                 setMessages((prev) => [
                     ...prev,
                     { role: 'assistant', content: '', id: assistantMsgId, isStreaming: true },
@@ -90,6 +189,7 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
                         streamingMsgIdRef.current = null;
                         if (fullContent) {
                             onMessageSaved?.('assistant', fullContent, 'text');
+                            autoSpeak(fullContent);
                         }
                     },
                     onError: (errorMsg) => {
@@ -110,7 +210,6 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
         } catch (err) {
             const serverMsg = err.response?.data?.error || err.message;
             const errorText = serverMsg || 'Sorry, something went wrong. Please try again.';
-            // Only add error message if we don't already have a streaming placeholder
             if (!streamingMsgIdRef.current) {
                 setMessages((prev) => [
                     ...prev,
@@ -134,29 +233,10 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
         }
     };
 
-    const handleImage = async (file) => {
+    const handleImageSelect = (file) => {
         if (loading) return;
-        const imageUrl = URL.createObjectURL(file);
-        const userMsg = { role: 'user', content: `Analyze this image: ${file.name}`, imageUrl, id: Date.now() };
-        setMessages((prev) => [...prev, userMsg]);
-        onMessageSaved?.('user', `Analyze this image: ${file.name}`, 'image');
-        setLoading(true);
-
-        try {
-            const data = await analyzeImage(file);
-            setMessages((prev) => [
-                ...prev,
-                { role: 'assistant', content: data.reply, id: Date.now() + 1 },
-            ]);
-            onMessageSaved?.('assistant', data.reply, 'image');
-        } catch (err) {
-            setMessages((prev) => [
-                ...prev,
-                { role: 'assistant', content: '❌ Failed to analyze image. Please try again.', id: Date.now() + 1 },
-            ]);
-        } finally {
-            setLoading(false);
-        }
+        const previewUrl = URL.createObjectURL(file);
+        setStagedImage({ file, previewUrl });
     };
 
     const handlePDF = async (file) => {
@@ -175,6 +255,7 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
                 { role: 'assistant', content: pdfReply, id: Date.now() + 1 },
             ]);
             onMessageSaved?.('assistant', pdfReply, 'pdf');
+            autoSpeak(pdfReply);
         } catch (err) {
             setMessages((prev) => [
                 ...prev,
@@ -195,6 +276,28 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
             handleSend();
         }
     };
+
+    const toggleVoiceAssistant = () => {
+        const next = !voiceAssistant;
+        if (!next) {
+            // Turning off — stop TTS and recognition
+            stopSpeaking();
+            setVaSpeaking(false);
+            setVaListening(false);
+        }
+        setVoiceAssistant(next);
+    };
+
+    // Derive VA status label
+    const vaStatus = voiceAssistant
+        ? vaSpeaking
+            ? 'Speaking…'
+            : vaListening
+                ? 'Listening…'
+                : loading
+                    ? 'Thinking…'
+                    : 'Ready'
+        : null;
 
     return (
         <div className="flex flex-col h-full bg-surface-800">
@@ -249,6 +352,51 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
                 <div ref={messagesEndRef} />
             </div>
 
+            {/* Voice Assistant status bar */}
+            {voiceAssistant && (
+                <div className="voice-assistant-bar mx-4 mb-2">
+                    <div className="flex items-center gap-2">
+                        <span className={`va-dot ${vaSpeaking ? 'va-dot-speaking' : vaListening ? 'va-dot-listening' : ''}`} />
+                        <span className="text-xs font-medium text-gray-300">
+                            🎙️ Voice Assistant — {vaStatus}
+                        </span>
+                    </div>
+                    <button
+                        onClick={toggleVoiceAssistant}
+                        className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+                    >
+                        Stop
+                    </button>
+                </div>
+            )}
+
+            {/* Image context indicator (with thumbnail) */}
+            {imageContext && (
+                <div className="mx-4 mb-2 px-3 py-2 rounded-lg bg-white/5 border border-white/8 flex items-center justify-between">
+                    <span className="text-xs text-gray-400 flex items-center gap-2">
+                        {imageContext.previewUrl ? (
+                            <img
+                                src={imageContext.previewUrl}
+                                alt="Context"
+                                className="w-6 h-6 rounded object-cover"
+                            />
+                        ) : (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                        )}
+                        Image loaded — questions will be about this image
+                    </span>
+                    <button
+                        onClick={() => setImageContext(null)}
+                        className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                    >
+                        Clear
+                    </button>
+                </div>
+            )}
+
             {/* Document context indicator */}
             {documentId && (
                 <div className="mx-4 mb-2 px-3 py-2 rounded-lg bg-white/5 border border-white/8 flex items-center justify-between">
@@ -268,12 +416,48 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
                 </div>
             )}
 
+            {/* Staged image preview strip */}
+            {stagedImage && (
+                <div className="mx-4 mb-2 image-preview-strip">
+                    <img src={stagedImage.previewUrl} alt="Preview" />
+                    <span className="text-xs text-gray-400 truncate max-w-[200px]">
+                        {stagedImage.file.name}
+                    </span>
+                    <button className="remove-btn" onClick={clearStagedImage} title="Remove image">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            )}
+
             {/* Input bar */}
             <div className="px-4 pb-4 pt-2">
                 <div className="rounded-xl border border-white/10 bg-surface-700 p-2 flex items-end gap-2">
                     <div className="flex items-center gap-1">
-                        <VoiceInput onTranscript={handleVoice} disabled={loading} />
-                        <ImageUpload onImageSelect={handleImage} disabled={loading} />
+                        <VoiceInput
+                            onTranscript={handleVoice}
+                            disabled={loading}
+                            assistantMode={voiceAssistant}
+                            onListeningChange={setVaListening}
+                        />
+                        {/* Voice Assistant toggle button */}
+                        <button
+                            onClick={toggleVoiceAssistant}
+                            className={`p-2.5 rounded-lg transition-all duration-200
+                                ${voiceAssistant
+                                    ? 'bg-accent text-white voice-ring'
+                                    : 'bg-surface-800 text-gray-500 hover:bg-surface-600 hover:text-gray-300'
+                                }
+                                disabled:opacity-40 disabled:cursor-not-allowed`}
+                            title={voiceAssistant ? 'Stop voice assistant' : 'Start voice assistant'}
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M15.536 8.464a5 5 0 010 7.072M12 6a6 6 0 000 12m6.364-2.636A9 9 0 006.636 6.636M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                            </svg>
+                        </button>
+                        <ImageUpload onImageSelect={handleImageSelect} disabled={loading} />
                         <FileUpload onFileSelect={handlePDF} disabled={loading} />
                     </div>
 
@@ -281,7 +465,17 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder={documentId ? 'Ask about the document...' : 'Message AI Assistant...'}
+                        placeholder={
+                            voiceAssistant
+                                ? 'Voice assistant active — or type here...'
+                                : stagedImage
+                                    ? 'Press Enter to analyze, or type a question...'
+                                    : imageContext
+                                        ? 'Ask about the image...'
+                                        : documentId
+                                            ? 'Ask about the document...'
+                                            : 'Message AI Assistant...'
+                        }
                         rows={1}
                         className="flex-1 bg-transparent border-none outline-none resize-none text-sm
                             text-gray-200 placeholder-gray-500
@@ -303,7 +497,7 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
                     ) : (
                         <button
                             onClick={() => handleSend()}
-                            disabled={!input.trim() || loading}
+                            disabled={!input.trim() && !stagedImage || loading}
                             className="p-2.5 rounded-lg bg-white text-surface-900
                                 hover:bg-gray-200 transition-all duration-200
                                 disabled:opacity-30 disabled:cursor-not-allowed"

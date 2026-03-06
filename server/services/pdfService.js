@@ -1,3 +1,26 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════
+ *  PDF Service — RAG Pipeline Orchestrator
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ *  Orchestrates the full PDF → RAG → Answer pipeline:
+ *
+ *  Upload path:
+ *    1. Extract text from PDF        (pdf-parse)
+ *    2. Chunk text into ~500-char     (ragService.chunkText)
+ *    3. Generate HF embeddings        (embeddingService → lib/embeddings)
+ *    4. Store chunks + vectors        (ragService.ingestDocument → Supabase)
+ *    5. Summarize the document        (aiService.summarizeDocument)
+ *
+ *  Question path:
+ *    1. Embed the user's question     (embeddingService.generateEmbedding)
+ *    2. Vector similarity search      (ragService.searchChunks → pgvector)
+ *    3. Build context prompt          (ragService.buildRAGPrompt)
+ *    4. Send to LLM for answer        (aiService.chatWithRAGContext)
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
 const pdfParse = require('pdf-parse');
 const { chatWithRAGContext, summarizeDocument } = require('./aiService');
 const { ingestDocument, searchChunks, buildRAGPrompt, getRepresentativeText } = require('./ragService');

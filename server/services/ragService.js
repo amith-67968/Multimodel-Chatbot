@@ -1,3 +1,36 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════
+ *  RAG (Retrieval Augmented Generation) Service
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ *  This module implements the core RAG pipeline for document Q&A.
+ *
+ *  ┌──────────────────── INGESTION (write path) ───────────────────┐
+ *  │                                                               │
+ *  │  PDF text ──► chunkText()     Split into ~500-char chunks     │
+ *  │           ──► embeddings      Generate 384-dim HF vectors     │
+ *  │           ──► Supabase        Store chunks + vectors          │
+ *  │                                                               │
+ *  └───────────────────────────────────────────────────────────────┘
+ *
+ *  ┌──────────────────── RETRIEVAL (read path) ────────────────────┐
+ *  │                                                               │
+ *  │  Question ──► generateEmbedding()   Vectorize the query       │
+ *  │           ──► match_document_chunks  pgvector similarity (top5)│
+ *  │           ──► buildRAGPrompt()       Inject context into LLM  │
+ *  │           ──► chatWithRAGContext()   Generate answer           │
+ *  │                                                               │
+ *  └───────────────────────────────────────────────────────────────┘
+ *
+ *  Key design decisions:
+ *    - Sentence-boundary chunking with overlap for context continuity
+ *    - Batch embedding generation (20 chunks at a time) for speed
+ *    - Cosine similarity via pgvector HNSW index for fast search
+ *    - Top-5 chunks with 0.3 similarity threshold to filter noise
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
 const { getSupabaseAdmin } = require('./supabaseAdmin');
 const { generateEmbedding, generateEmbeddings } = require('./embeddingService');
 

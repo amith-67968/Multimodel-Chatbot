@@ -1,43 +1,105 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
-export default function VoiceInput({ onTranscript, disabled }) {
+export default function VoiceInput({ onTranscript, disabled, assistantMode = false, onListeningChange }) {
     const [listening, setListening] = useState(false);
     const recognitionRef = useRef(null);
+    const assistantModeRef = useRef(assistantMode);
+
+    // Keep ref in sync for use inside callbacks
+    useEffect(() => {
+        assistantModeRef.current = assistantMode;
+    }, [assistantMode]);
+
+    // Notify parent of listening state changes
+    const updateListening = useCallback((value) => {
+        setListening(value);
+        onListeningChange?.(value);
+    }, [onListeningChange]);
 
     useEffect(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) return;
 
         const recognition = new SpeechRecognition();
-        recognition.continuous = false;
         recognition.interimResults = false;
         recognition.lang = 'en-US';
 
         recognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript;
+            const transcript = event.results[event.results.length - 1][0].transcript;
             onTranscript(transcript);
-            setListening(false);
+            // In non-assistant mode, stop after one result
+            if (!assistantModeRef.current) {
+                updateListening(false);
+            }
         };
 
-        recognition.onerror = () => setListening(false);
-        recognition.onend = () => setListening(false);
+        recognition.onerror = (e) => {
+            // In assistant mode, ignore "no-speech" and "aborted" — keep going
+            if (assistantModeRef.current && (e.error === 'no-speech' || e.error === 'aborted')) {
+                return;
+            }
+            updateListening(false);
+        };
+
+        recognition.onend = () => {
+            // In assistant mode, auto-restart unless explicitly stopped
+            if (assistantModeRef.current) {
+                try {
+                    recognition.start();
+                } catch {
+                    // Already started or other error — ignore
+                }
+                return;
+            }
+            updateListening(false);
+        };
 
         recognitionRef.current = recognition;
-    }, [onTranscript]);
+
+        return () => {
+            try { recognition.stop(); } catch { /* noop */ }
+        };
+    }, [onTranscript, updateListening]);
+
+    // React to assistantMode toggling from the parent
+    useEffect(() => {
+        const rec = recognitionRef.current;
+        if (!rec) return;
+
+        if (assistantMode) {
+            // Start continuous listening
+            rec.continuous = true;
+            try {
+                rec.start();
+                updateListening(true);
+            } catch {
+                // Recognition may already be running
+            }
+        } else {
+            // Stop everything
+            rec.continuous = false;
+            try { rec.stop(); } catch { /* noop */ }
+            updateListening(false);
+        }
+    }, [assistantMode, updateListening]);
 
     const toggle = () => {
         if (!recognitionRef.current) return;
         if (listening) {
             recognitionRef.current.stop();
-            setListening(false);
+            updateListening(false);
         } else {
+            recognitionRef.current.continuous = assistantModeRef.current;
             recognitionRef.current.start();
-            setListening(true);
+            updateListening(true);
         }
     };
 
     const supported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
     if (!supported) return null;
+
+    // In assistant mode the parent controls the mic, so hide the standalone button
+    if (assistantMode) return null;
 
     return (
         <button

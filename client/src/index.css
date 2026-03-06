@@ -175,6 +175,70 @@ body {
   }
 }
 
+/* Lightbox scale-up */
+.lightbox-enter {
+  animation: lightbox-scale-up 0.25s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes lightbox-scale-up {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Staged image preview strip */
+.image-preview-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: slide-up-sm 0.2s ease-out both;
+}
+
+.image-preview-strip img {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.375rem;
+  object-fit: cover;
+}
+
+.image-preview-strip .remove-btn {
+  margin-left: auto;
+  padding: 0.125rem;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.4);
+  transition: color 0.15s, background 0.15s;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.image-preview-strip .remove-btn:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.12);
+}
+
+@keyframes slide-up-sm {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Mic recording pulse */
 .mic-pulse {
   animation: mic-pulse 1.5s ease-in-out infinite;
@@ -189,6 +253,70 @@ body {
 
   50% {
     box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+  }
+}
+
+/* ── Voice Assistant Mode ─────────── */
+
+/* Status bar */
+.voice-assistant-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: rgba(16, 163, 127, 0.08);
+  border: 1px solid rgba(16, 163, 127, 0.2);
+  animation: slide-up-sm 0.2s ease-out both;
+}
+
+/* Pulsing status dot */
+.va-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b7280;
+  flex-shrink: 0;
+}
+
+.va-dot-listening {
+  background: #10b981;
+  animation: va-pulse 1.2s ease-in-out infinite;
+}
+
+.va-dot-speaking {
+  background: #3b82f6;
+  animation: va-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes va-pulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 1;
+  }
+
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+    opacity: 0.7;
+  }
+}
+
+/* Toggle button glow ring when active */
+.voice-ring {
+  animation: voice-ring-glow 2s ease-in-out infinite;
+}
+
+@keyframes voice-ring-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 163, 127, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px rgba(16, 163, 127, 0);
   }
 }
 
