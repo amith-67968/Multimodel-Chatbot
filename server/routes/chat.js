@@ -5,13 +5,13 @@ const { handleChat, prepareStreamChat } = require('../services/chatService');
 // POST /api/chat – non-streaming endpoint (kept as fallback)
 router.post('/', async (req, res) => {
     try {
-        const { message, history = [], mode = 'detailed', userId, conversationId } = req.body;
+        const { message, history = [], mode = 'detailed', userId, conversationId, model } = req.body;
 
         if (!message || !message.trim()) {
             return res.status(400).json({ error: 'Message is required' });
         }
 
-        const reply = await handleChat(message, history, mode, userId, conversationId);
+        const reply = await handleChat(message, history, mode, userId, conversationId, model);
         res.json({ reply });
     } catch (error) {
         console.error('Chat error:', error.message || error);
@@ -26,7 +26,7 @@ router.post('/', async (req, res) => {
 
 // POST /api/chat/stream – SSE streaming endpoint
 router.post('/stream', async (req, res) => {
-    const { message, history = [], mode = 'detailed', userId, conversationId } = req.body;
+    const { message, history = [], mode = 'detailed', userId, conversationId, model } = req.body;
 
     if (!message || !message.trim()) {
         return res.status(400).json({ error: 'Message is required' });
@@ -59,7 +59,7 @@ router.post('/stream', async (req, res) => {
 
     try {
         // Prepare memory-aware context and get the raw LLM stream
-        const { stream, onComplete } = await prepareStreamChat(message, history, mode, userId, conversationId);
+        const { stream, onComplete } = await prepareStreamChat(message, history, mode, userId, conversationId, model);
 
         for await (const token of stream) {
             if (aborted) break;

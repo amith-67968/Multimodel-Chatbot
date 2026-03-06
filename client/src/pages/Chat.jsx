@@ -17,6 +17,7 @@ export default function Chat() {
     const navigate = useNavigate();
 
     const [mode, setMode] = useState('detailed');
+    const [selectedModel, setSelectedModel] = useState('llama3');
     const [conversations, setConversations] = useState([{ id: String(Date.now()), title: 'New Chat', messages: [], documentId: '' }]);
     const [activeConvId, setActiveConvId] = useState(null);
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -262,6 +263,20 @@ export default function Chat() {
                         </div>
                     </div>
 
+                    {/* Model selector */}
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500">Model</span>
+                        <select
+                            value={selectedModel}
+                            onChange={(e) => setSelectedModel(e.target.value)}
+                            className="model-selector"
+                        >
+                            <option value="llama3">Llama 3.3 70B</option>
+                            <option value="mixtral">Mixtral 8x7B</option>
+                            <option value="vision">Llama 4 Scout</option>
+                        </select>
+                    </div>
+
                     {/* User info & Logout */}
                     <div className="pt-2 border-t border-white/5">
                         <div className="flex items-center gap-2 mb-2">
@@ -307,6 +322,7 @@ export default function Chat() {
 
                 <ChatWindow
                     mode={mode}
+                    model={selectedModel}
                     messages={activeConv?.messages || []}
                     setMessages={setMessages}
                     documentId={activeConv?.documentId || ''}

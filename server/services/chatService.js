@@ -13,7 +13,7 @@ const { saveMessage, getRecentMessages } = require('../lib/memory');
  * @param {string} [conversationId] - Conversation UUID (for memory features)
  * @returns {Promise<string>} The assistant's reply
  */
-async function handleChat(message, history, mode, userId, conversationId) {
+async function handleChat(message, history, mode, userId, conversationId, model) {
     // Load persisted messages as base history when conversationId is available
     let effectiveHistory = history;
     if (conversationId) {
@@ -37,7 +37,7 @@ async function handleChat(message, history, mode, userId, conversationId) {
         );
     }
 
-    const reply = await chatWithText(message, effectiveHistory, mode);
+    const reply = await chatWithText(message, effectiveHistory, mode, model);
 
     // Save assistant response to DB (non-blocking)
     if (conversationId) {
@@ -72,7 +72,7 @@ async function handleChat(message, history, mode, userId, conversationId) {
  * @param {string} [conversationId] - Conversation UUID (for memory features)
  * @returns {Promise<{ stream: AsyncGenerator<string>, onComplete: (fullReply: string) => void }>}
  */
-async function prepareStreamChat(message, history, mode, userId, conversationId) {
+async function prepareStreamChat(message, history, mode, userId, conversationId, model) {
     // Load persisted messages as base history when conversationId is available
     let effectiveHistory = history;
     if (conversationId) {
@@ -104,7 +104,7 @@ async function prepareStreamChat(message, history, mode, userId, conversationId)
         );
     }
 
-    const stream = streamChatWithText(message, effectiveHistory, mode);
+    const stream = streamChatWithText(message, effectiveHistory, mode, model);
 
     // Callback for the route handler to invoke after streaming finishes
     const onComplete = (fullReply) => {

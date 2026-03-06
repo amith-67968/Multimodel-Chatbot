@@ -6,7 +6,7 @@ import FileUpload from './FileUpload';
 import { streamMessage, analyzeImage, askImageQuestion, uploadPDF, askPDFQuestion } from '../services/api';
 import { speak, stopSpeaking } from '../utils/speech';
 
-export default function ChatWindow({ mode, messages, setMessages, documentId, setDocumentId, onMessageSaved, userId, conversationId }) {
+export default function ChatWindow({ mode, model, messages, setMessages, documentId, setDocumentId, onMessageSaved, userId, conversationId }) {
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [isStreaming, setIsStreaming] = useState(false);
@@ -165,6 +165,7 @@ export default function ChatWindow({ mode, messages, setMessages, documentId, se
                 await streamMessage(text, buildHistory(), mode, {
                     userId,
                     conversationId,
+                    model,
                     onChunk: (token) => {
                         fullContent += token;
                         const updatedContent = fullContent;

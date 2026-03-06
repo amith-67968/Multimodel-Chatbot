@@ -320,6 +320,37 @@ body {
   }
 }
 
+/* ── Model Selector ───────────────── */
+.model-selector {
+  appearance: none;
+  background: var(--surface-800, #1a1a2e);
+  color: #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.5rem;
+  padding: 0.25rem 1.75rem 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.4rem center;
+}
+
+.model-selector:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  background-color: var(--surface-700, #232340);
+}
+
+.model-selector:focus {
+  border-color: rgba(16, 163, 127, 0.5);
+}
+
+.model-selector option {
+  background: #1a1a2e;
+  color: #e5e7eb;
+}
+
 /* ───────────────────────────────── */
 /*          LANDING PAGE             */
 /* ───────────────────────────────── */

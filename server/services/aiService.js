@@ -2,6 +2,26 @@ const Groq = require('groq-sdk');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// ── Model Registry ─────────────────────────────────────────────────
+const MODEL_REGISTRY = {
+    llama3: 'llama-3.3-70b-versatile',
+    mixtral: 'mixtral-8x7b-32768',
+    vision: 'meta-llama/llama-4-scout-17b-16e-instruct',
+};
+
+const DEFAULT_MODEL = 'llama3';
+
+/**
+ * Resolve a user-facing model key to a Groq model ID.
+ * Falls back to the default model if the key is unrecognised.
+ *
+ * @param {string} [key] - One of 'llama3', 'mixtral', 'vision'
+ * @returns {string} Groq model identifier
+ */
+function resolveModel(key) {
+    return MODEL_REGISTRY[key] || MODEL_REGISTRY[DEFAULT_MODEL];
+}
+
 /**
  * Retry wrapper with exponential backoff for rate-limited API calls
  */
@@ -29,18 +49,16 @@ async function withRetry(fn, maxRetries = 3) {
 /**
  * Chat with text – supports conversation history
  */
-async function chatWithText(message, history = [], mode = 'detailed') {
+async function chatWithText(message, history = [], mode = 'detailed', model) {
     const systemPrompt =
         mode === 'beginner'
             ? 'You are a friendly AI assistant. Explain everything in very simple terms, as if talking to a complete beginner. Use analogies and avoid jargon.'
             : 'You are a knowledgeable AI assistant. Provide thorough, well-structured answers with relevant details.';
 
-    // Build conversation messages
     const messages = [
         { role: 'system', content: systemPrompt },
     ];
 
-    // Add history
     for (const entry of history) {
         messages.push({
             role: entry.role === 'user' ? 'user' : 'assistant',
@@ -48,12 +66,11 @@ async function chatWithText(message, history = [], mode = 'detailed') {
         });
     }
 
-    // Add current message
     messages.push({ role: 'user', content: message });
 
     return withRetry(async () => {
         const completion = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
+            model: resolveModel(model),
             messages,
             temperature: 0.7,
             max_tokens: 4096,
@@ -65,7 +82,7 @@ async function chatWithText(message, history = [], mode = 'detailed') {
 /**
  * Stream chat with text – yields tokens as they are generated
  */
-async function* streamChatWithText(message, history = [], mode = 'detailed') {
+async function* streamChatWithText(message, history = [], mode = 'detailed', model) {
     const systemPrompt =
         mode === 'beginner'
             ? 'You are a friendly AI assistant. Explain everything in very simple terms, as if talking to a complete beginner. Use analogies and avoid jargon.'
@@ -85,7 +102,7 @@ async function* streamChatWithText(message, history = [], mode = 'detailed') {
     messages.push({ role: 'user', content: message });
 
     const stream = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: resolveModel(model),
         messages,
         temperature: 0.7,
         max_tokens: 4096,
@@ -104,7 +121,7 @@ async function* streamChatWithText(message, history = [], mode = 'detailed') {
 /**
  * Answer questions using RAG-retrieved context (replaces chatWithDocument)
  */
-async function chatWithRAGContext(ragContext, question, mode = 'detailed') {
+async function chatWithRAGContext(ragContext, question, mode = 'detailed', model) {
     const modeInstruction =
         mode === 'beginner'
             ? 'Explain your answer in very simple terms, suitable for a beginner.'
@@ -123,7 +140,7 @@ async function chatWithRAGContext(ragContext, question, mode = 'detailed') {
 
     return withRetry(async () => {
         const completion = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
+            model: resolveModel(model),
             messages,
             temperature: 0.7,
             max_tokens: 4096,
@@ -135,7 +152,7 @@ async function chatWithRAGContext(ragContext, question, mode = 'detailed') {
 /**
  * Generate a summary of document text
  */
-async function summarizeDocument(documentText, mode = 'detailed') {
+async function summarizeDocument(documentText, mode = 'detailed', model) {
     const modeInstruction =
         mode === 'beginner'
             ? 'Write the summary in very simple language, suitable for a beginner.'
@@ -154,7 +171,7 @@ async function summarizeDocument(documentText, mode = 'detailed') {
 
     return withRetry(async () => {
         const completion = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
+            model: resolveModel(model),
             messages,
             temperature: 0.7,
             max_tokens: 4096,
@@ -163,4 +180,4 @@ async function summarizeDocument(documentText, mode = 'detailed') {
     });
 }
 
-module.exports = { withRetry, chatWithText, streamChatWithText, chatWithRAGContext, summarizeDocument };
+module.exports = { withRetry, chatWithText, streamChatWithText, chatWithRAGContext, summarizeDocument, MODEL_REGISTRY, DEFAULT_MODEL, resolveModel };

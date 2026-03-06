@@ -11,8 +11,8 @@ const api = axios.create({
 /**
  * Send a text chat message (non-streaming fallback)
  */
-export async function sendMessage(message, history = [], mode = 'detailed') {
-    const { data } = await api.post('/chat', { message, history, mode });
+export async function sendMessage(message, history = [], mode = 'detailed', model) {
+    const { data } = await api.post('/chat', { message, history, mode, model });
     return data.reply;
 }
 
@@ -23,11 +23,11 @@ export async function sendMessage(message, history = [], mode = 'detailed') {
  * @param {string} mode
  * @param {object} options - { onChunk, onDone, onError, signal }
  */
-export async function streamMessage(message, history = [], mode = 'detailed', { onChunk, onDone, onError, signal, userId, conversationId } = {}) {
+export async function streamMessage(message, history = [], mode = 'detailed', { onChunk, onDone, onError, signal, userId, conversationId, model } = {}) {
     const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, history, mode, userId, conversationId }),
+        body: JSON.stringify({ message, history, mode, userId, conversationId, model }),
         signal,
     });
 
