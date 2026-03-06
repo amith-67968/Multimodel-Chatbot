@@ -129,3 +129,5 @@ Voice features (STT/TTS) work best in **Chrome / Edge**. Firefox and Safari have
 ## License
 
 MIT
+
+You can check out the deployed link here: https://multimodel-chatbot.vercel.app/
