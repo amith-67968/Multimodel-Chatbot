@@ -351,6 +351,23 @@ body {
   color: #e5e7eb;
 }
 
+/* ── Dashboard ────────────────────── */
+.dashboard-card {
+  background: var(--surface-800, #1a1a2e);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  transition: border-color 0.2s;
+}
+
+.dashboard-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.bg-accent {
+  background-color: var(--accent, #10a37f);
+}
+
 /* ───────────────────────────────── */
 /*          LANDING PAGE             */
 /* ───────────────────────────────── */

@@ -5,6 +5,7 @@ import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Chat from './pages/Chat';
+import AdminDashboard from './pages/AdminDashboard';
 
 export default function App() {
     const { user, loading } = useAuth();
@@ -25,6 +26,14 @@ export default function App() {
                 element={
                     <ProtectedRoute>
                         <Chat />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/admin"
+                element={
+                    <ProtectedRoute>
+                        <AdminDashboard />
                     </ProtectedRoute>
                 }
             />

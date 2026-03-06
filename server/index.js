@@ -7,6 +7,7 @@ const fs = require('fs');
 const chatRoutes = require('./routes/chat');
 const imageRoutes = require('./routes/image');
 const pdfRoutes = require('./routes/pdf');
+const analyticsRoutes = require('./routes/analytics');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -26,6 +27,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/api/chat', chatRoutes);
 app.use('/api/image', imageRoutes);
 app.use('/api/pdf', pdfRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

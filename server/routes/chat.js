@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { handleChat, prepareStreamChat } = require('../services/chatService');
+const { trackEvent } = require('../services/analyticsService');
 const rateLimit = require('../middleware/rateLimit');
 
 // Apply rate limiting — 20 requests per minute per client
@@ -14,7 +15,9 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Message is required' });
         }
 
+        const startTime = Date.now();
         const reply = await handleChat(message, history, mode, userId, conversationId, model);
+        trackEvent(userId, 'text', Date.now() - startTime, model);
         res.json({ reply });
     } catch (error) {
         console.error('Chat error:', error.message || error);
@@ -62,6 +65,7 @@ router.post('/stream', async (req, res) => {
 
     try {
         // Prepare memory-aware context and get the raw LLM stream
+        const streamStart = Date.now();
         const { stream, onComplete } = await prepareStreamChat(message, history, mode, userId, conversationId, model);
 
         for await (const token of stream) {
@@ -74,8 +78,9 @@ router.post('/stream', async (req, res) => {
             res.write('data: [DONE]\n\n');
         }
 
-        // Trigger background memory update
+        // Trigger background memory update + analytics
         onComplete(fullReply);
+        trackEvent(userId, 'text', Date.now() - streamStart, model);
     } catch (error) {
         console.error('Stream error:', error.message || error);
         const isRateLimit = error.message?.includes('429') || error.message?.includes('rate') || error.message?.includes('quota');
