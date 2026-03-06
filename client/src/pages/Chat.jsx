@@ -23,12 +23,11 @@ export default function Chat() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [historyLoaded, setHistoryLoaded] = useState(false);
 
-    // Load chat history from Supabase on mount — always start with a fresh chat
+    // Load chat history from Supabase on mount — runs ONCE per login
     useEffect(() => {
-        if (!user) return;
+        if (!user || historyLoaded) return;
 
         const load = async () => {
-            // Load conversation list (newest first) and all messages
             const [metaList, grouped] = await Promise.all([
                 loadConversationList(user.id),
                 loadConversations(user.id),
@@ -38,7 +37,6 @@ export default function Chat() {
             const freshConv = { id: freshId, title: 'New Chat', messages: [], documentId: '' };
 
             if (metaList.length > 0) {
-                // Build conversations from metadata (already newest-first)
                 const loaded = metaList.map((meta) => {
                     const msgs = grouped[meta.session_id] || [];
                     return { id: meta.session_id, title: meta.title, messages: msgs, documentId: '' };
@@ -52,7 +50,7 @@ export default function Chat() {
         };
 
         load();
-    }, [user]);
+    }, [user, historyLoaded]);
 
     useEffect(() => {
         if (!activeConvId && conversations.length > 0) {

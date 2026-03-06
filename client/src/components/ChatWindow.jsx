@@ -11,7 +11,8 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
     const [loading, setLoading] = useState(false);
     const [isStreaming, setIsStreaming] = useState(false);
     const [imageContext, setImageContext] = useState(null);
-    const [stagedImage, setStagedImage] = useState(null); // { file, previewUrl }
+    const [stagedImage, setStagedImage] = useState(null);
+    const [dragActive, setDragActive] = useState(false);
 
     // Voice assistant mode
     const [voiceAssistant, setVoiceAssistant] = useState(false);
@@ -88,6 +89,7 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
             imageUrl: previewUrl,
             imageName: file.name,
             id: Date.now(),
+            timestamp: Date.now(),
         };
         setMessages((prev) => [...prev, userMsg]);
         onMessageSaved?.('user', `Analyze this image: ${file.name}`, 'image');
@@ -99,7 +101,7 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
             const reply = data.reply;
             setMessages((prev) => [
                 ...prev,
-                { role: 'assistant', content: reply, id: Date.now() + 1 },
+                { role: 'assistant', content: reply, id: Date.now() + 1, timestamp: Date.now() },
             ]);
             onMessageSaved?.('assistant', reply, 'image');
             autoSpeak(reply);
@@ -107,7 +109,7 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
             const serverMsg = err.response?.data?.error || err.message;
             setMessages((prev) => [
                 ...prev,
-                { role: 'assistant', content: `❌ ${serverMsg || 'Failed to analyze image. Please try again.'}`, id: Date.now() + 1 },
+                { role: 'assistant', content: `❌ ${serverMsg || 'Failed to analyze image. Please try again.'}`, id: Date.now() + 1, timestamp: Date.now() },
             ]);
         } finally {
             setLoading(false);
@@ -130,7 +132,7 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
 
         setInput('');
 
-        const userMsg = { role: 'user', content: text, id: Date.now() };
+        const userMsg = { role: 'user', content: text, id: Date.now(), timestamp: Date.now() };
         setMessages((prev) => [...prev, userMsg]);
         onMessageSaved?.('user', text, 'text');
         setLoading(true);
@@ -138,12 +140,12 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
         try {
             if (imageContext) {
                 const reply = await askImageQuestion(imageContext.imageData, imageContext.mimeType, text);
-                setMessages((prev) => [...prev, { role: 'assistant', content: reply, id: Date.now() + 1 }]);
+                setMessages((prev) => [...prev, { role: 'assistant', content: reply, id: Date.now() + 1, timestamp: Date.now() }]);
                 onMessageSaved?.('assistant', reply, 'image');
                 autoSpeak(reply);
             } else if (documentId) {
                 const reply = await askPDFQuestion(documentId, userId, text, mode);
-                setMessages((prev) => [...prev, { role: 'assistant', content: reply, id: Date.now() + 1 }]);
+                setMessages((prev) => [...prev, { role: 'assistant', content: reply, id: Date.now() + 1, timestamp: Date.now() }]);
                 onMessageSaved?.('assistant', reply, 'text');
                 autoSpeak(reply);
             } else {
@@ -153,7 +155,7 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
 
                 setMessages((prev) => [
                     ...prev,
-                    { role: 'assistant', content: '', id: assistantMsgId, isStreaming: true },
+                    { role: 'assistant', content: '', id: assistantMsgId, isStreaming: true, timestamp: Date.now() },
                 ]);
                 setIsStreaming(true);
 
@@ -214,7 +216,7 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
             if (!streamingMsgIdRef.current) {
                 setMessages((prev) => [
                     ...prev,
-                    { role: 'assistant', content: `❌ ${errorText}`, id: Date.now() + 1 },
+                    { role: 'assistant', content: `❌ ${errorText}`, id: Date.now() + 1, timestamp: Date.now() },
                 ]);
             } else {
                 const msgId = streamingMsgIdRef.current;
@@ -242,7 +244,7 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
 
     const handlePDF = async (file) => {
         if (loading) return;
-        const userMsg = { role: 'user', content: `Uploaded PDF: ${file.name}`, pdfName: file.name, id: Date.now() };
+        const userMsg = { role: 'user', content: `Uploaded PDF: ${file.name}`, pdfName: file.name, id: Date.now(), timestamp: Date.now() };
         setMessages((prev) => [...prev, userMsg]);
         onMessageSaved?.('user', `Uploaded PDF: ${file.name}`, 'pdf');
         setLoading(true);
@@ -253,14 +255,14 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
             const pdfReply = `📄 **${data.filename}** (${data.pages} page${data.pages !== 1 ? 's' : ''}, ${data.chunkCount} chunks indexed)\n\n**Summary:**\n${data.summary}\n\n_You can now ask questions about this document._`;
             setMessages((prev) => [
                 ...prev,
-                { role: 'assistant', content: pdfReply, id: Date.now() + 1 },
+                { role: 'assistant', content: pdfReply, id: Date.now() + 1, timestamp: Date.now() },
             ]);
             onMessageSaved?.('assistant', pdfReply, 'pdf');
             autoSpeak(pdfReply);
         } catch (err) {
             setMessages((prev) => [
                 ...prev,
-                { role: 'assistant', content: '❌ Failed to process PDF. Please try again.', id: Date.now() + 1 },
+                { role: 'assistant', content: '❌ Failed to process PDF. Please try again.', id: Date.now() + 1, timestamp: Date.now() },
             ]);
         } finally {
             setLoading(false);
@@ -300,8 +302,42 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
                     : 'Ready'
         : null;
 
+    // ── Drag-and-drop handlers ──
+    const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true); };
+    const handleDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); setDragActive(false); };
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+        if (file.type === 'application/pdf') {
+            handlePDF(file);
+        } else if (file.type.startsWith('image/')) {
+            handleImageSelect(file);
+        }
+    };
+
     return (
-        <div className="flex flex-col h-full bg-surface-800">
+        <div
+            className={`flex flex-col h-full bg-surface-800 relative ${dragActive ? 'drag-active' : ''}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+        >
+            {/* Drag-and-drop overlay */}
+            {dragActive && (
+                <div className="drop-overlay">
+                    <div className="drop-overlay-content">
+                        <svg className="w-12 h-12 text-accent mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <p className="text-white font-semibold">Drop image or PDF here</p>
+                        <p className="text-gray-400 text-sm mt-1">Supports images and PDF files</p>
+                    </div>
+                </div>
+            )}
             {/* Messages area */}
             <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
                 {messages.length === 0 && (
@@ -337,14 +373,22 @@ export default function ChatWindow({ mode, model, messages, setMessages, documen
                     <MessageBubble key={msg.id} message={msg} />
                 ))}
 
-                {/* Typing indicator – only for non-streaming loading (image/PDF) */}
+                {/* Enhanced typing indicator */}
                 {loading && !isStreaming && (
                     <div className="flex justify-start animate-fade-in">
-                        <div className="bg-surface-700 rounded-2xl rounded-tl-md px-5 py-4">
-                            <div className="flex items-center gap-1.5">
-                                <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot" />
-                                <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot" />
-                                <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot" />
+                        <div className="flex items-center gap-3">
+                            <div className="w-7 h-7 rounded-full bg-accent flex items-center justify-center text-xs font-bold text-white">
+                                AI
+                            </div>
+                            <div className="bg-surface-700 rounded-2xl rounded-tl-md px-5 py-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot" />
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot" />
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot" />
+                                    </div>
+                                    <span className="text-xs text-gray-500 shimmer-text">AI is thinking...</span>
+                                </div>
                             </div>
                         </div>
                     </div>

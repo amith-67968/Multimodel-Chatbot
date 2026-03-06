@@ -1,10 +1,24 @@
-import { useState } from 'react';
-import { speak, stopSpeaking, isSpeaking } from '../utils/speech';
+import { useState, useMemo } from 'react';
+import { speak, stopSpeaking } from '../utils/speech';
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+/** Format a timestamp into a relative string */
+function formatTime(ts) {
+    if (!ts) return '';
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 10) return 'just now';
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
 
 export default function MessageBubble({ message }) {
     const [speaking, setSpeaking] = useState(false);
     const [expanded, setExpanded] = useState(false);
+    const [copied, setCopied] = useState(false);
     const isUser = message.role === 'user';
     const isStreaming = message.isStreaming;
 
@@ -18,21 +32,84 @@ export default function MessageBubble({ message }) {
         }
     };
 
-    // Derive a short type label from the image name extension
+    const handleCopyMessage = async () => {
+        try {
+            await navigator.clipboard.writeText(message.content);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch { /* ignore */ }
+    };
+
     const imageTypeLabel = (() => {
         if (!message.imageUrl) return null;
         const name = message.imageName || 'image';
-        const ext = name.split('.').pop()?.toUpperCase();
-        return ext || 'IMG';
+        return name.split('.').pop()?.toUpperCase() || 'IMG';
     })();
 
-    // Human-readable file size
-    const imageSizeLabel = (() => {
-        if (!message.imageUrl || !message.imageName) return null;
-        // We don't have the raw size on the message, so derive from the file object if available
-        // The ChatWindow passes imageName which has the extension — we'll show the type only
-        return null;
-    })();
+    /** Custom renderers for ReactMarkdown — syntax-highlighted code blocks */
+    /** Markdown renderers — use lightweight plain blocks while streaming,
+     *  switch to full Prism highlighting once the message is complete. */
+    const markdownComponents = useMemo(() => ({
+        code({ node, inline, className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || '');
+            const codeString = String(children).replace(/\n$/, '');
+
+            if (!inline && (match || codeString.includes('\n'))) {
+                const lang = match?.[1] || 'text';
+
+                // While streaming, skip expensive syntax highlighting
+                if (isStreaming) {
+                    return (
+                        <div className="code-block-wrapper">
+                            <div className="code-block-header">
+                                <span className="code-block-lang">{lang}</span>
+                            </div>
+                            <pre style={{ margin: 0, borderRadius: '0 0 8px 8px', fontSize: '0.825rem', background: 'rgba(0,0,0,0.45)', padding: '0.75rem', overflowX: 'auto' }}>
+                                <code>{codeString}</code>
+                            </pre>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="code-block-wrapper">
+                        <div className="code-block-header">
+                            <span className="code-block-lang">{lang}</span>
+                            <button
+                                className="code-copy-btn"
+                                onClick={async () => {
+                                    await navigator.clipboard.writeText(codeString);
+                                    const btn = document.activeElement;
+                                    if (btn) {
+                                        btn.textContent = '✓ Copied';
+                                        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+                                    }
+                                }}
+                            >
+                                Copy
+                            </button>
+                        </div>
+                        <SyntaxHighlighter
+                            style={oneDark}
+                            language={lang}
+                            PreTag="div"
+                            customStyle={{
+                                margin: 0,
+                                borderRadius: '0 0 8px 8px',
+                                fontSize: '0.825rem',
+                                background: 'rgba(0,0,0,0.45)',
+                            }}
+                            {...props}
+                        >
+                            {codeString}
+                        </SyntaxHighlighter>
+                    </div>
+                );
+            }
+            // Inline code
+            return <code className={className} {...props}>{children}</code>;
+        },
+    }), [isStreaming]);
 
     return (
         <>
@@ -48,7 +125,6 @@ export default function MessageBubble({ message }) {
                         className="max-w-[90vw] max-h-[85vh] rounded-xl shadow-2xl object-contain"
                         onClick={(e) => e.stopPropagation()}
                     />
-                    {/* Close hint */}
                     <span className="absolute top-6 right-6 px-3 py-1 rounded-lg text-xs
                         bg-black/60 text-white/80 backdrop-blur-sm">
                         Click anywhere to close
@@ -58,7 +134,7 @@ export default function MessageBubble({ message }) {
 
             <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-slide-up`}>
                 <div className={`max-w-[80%] lg:max-w-[70%]`}>
-                    {/* Avatar + Name */}
+                    {/* Avatar + Name + Timestamp */}
                     <div className={`flex items-center gap-2 mb-1 ${isUser ? 'flex-row-reverse' : ''}`}>
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold
                             ${isUser
@@ -69,6 +145,11 @@ export default function MessageBubble({ message }) {
                         <span className="text-xs text-gray-500 font-medium">
                             {isUser ? 'You' : 'Assistant'}
                         </span>
+                        {message.timestamp && (
+                            <span className="text-[10px] text-gray-600 ml-1">
+                                {formatTime(message.timestamp)}
+                            </span>
+                        )}
                     </div>
 
                     {/* Bubble */}
@@ -86,20 +167,17 @@ export default function MessageBubble({ message }) {
                                         hover:brightness-90 transition-all duration-200"
                                     onClick={() => setExpanded(true)}
                                 />
-                                {/* Type badge */}
                                 {imageTypeLabel && (
                                     <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px]
                                         font-semibold bg-black/60 text-white/90 backdrop-blur-sm">
                                         {imageTypeLabel}
                                     </span>
                                 )}
-                                {/* Expand hint */}
                                 <span className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded text-[10px]
                                     bg-black/60 text-white/80 opacity-0 group-hover:opacity-100
                                     transition-opacity duration-200 backdrop-blur-sm">
                                     Click to expand
                                 </span>
-                                {/* File name */}
                                 {message.imageName && (
                                     <div className="mt-1.5 flex items-center gap-1.5 text-xs text-gray-400">
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -128,7 +206,9 @@ export default function MessageBubble({ message }) {
                             <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
                         ) : (
                             <div className="prose-chat text-sm leading-relaxed">
-                                <ReactMarkdown>{message.content}</ReactMarkdown>
+                                <ReactMarkdown components={markdownComponents}>
+                                    {message.content}
+                                </ReactMarkdown>
                                 {isStreaming && (
                                     <span className="streaming-cursor">▊</span>
                                 )}
@@ -136,7 +216,7 @@ export default function MessageBubble({ message }) {
                         )}
                     </div>
 
-                    {/* Speak button for AI messages – hidden while streaming */}
+                    {/* Action buttons for AI messages */}
                     {!isUser && !isStreaming && message.content && (
                         <div className="mt-1.5 flex items-center gap-2">
                             <button
@@ -163,6 +243,18 @@ export default function MessageBubble({ message }) {
                                         Speak
                                     </>
                                 )}
+                            </button>
+                            <button
+                                onClick={handleCopyMessage}
+                                className="flex items-center gap-1.5 text-xs px-3 py-1 rounded-full
+                                    bg-white/5 text-gray-500 hover:text-gray-300 hover:bg-white/10 transition-all"
+                                title="Copy response"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                {copied ? 'Copied!' : 'Copy'}
                             </button>
                         </div>
                     )}
