@@ -5,7 +5,7 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 // ── Model Registry ─────────────────────────────────────────────────
 const MODEL_REGISTRY = {
     llama3: 'llama-3.3-70b-versatile',
-    mixtral: 'mixtral-8x7b-32768',
+    llama3_1: 'llama-3.1-8b-instant',
     vision: 'meta-llama/llama-4-scout-17b-16e-instruct',
 };
 

@@ -270,7 +270,7 @@ export default function Chat() {
                             className="model-selector"
                         >
                             <option value="llama3">Llama 3.3 70B</option>
-                            <option value="mixtral">Mixtral 8x7B</option>
+                            <option value="llama3_1">Llama 3.1 8B</option>
                             <option value="vision">Llama 4 Scout</option>
                         </select>
                     </div>

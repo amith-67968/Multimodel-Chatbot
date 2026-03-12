@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Base URL for deployed backend — change this when switching environments
-const API_BASE_URL = "https://multimodel-chatbot.onrender.com";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
 const api = axios.create({
     baseURL: `${API_BASE_URL}/api`,
