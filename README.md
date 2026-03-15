@@ -186,4 +186,3 @@ MIT
 
 ## Live Demo
 
-Check out the deployed app: https://multimodel-chatbot-chi.vercel.app/
